@@ -1,69 +1,91 @@
 import re
-from typing import List, Tuple
+from typing import List, Tuple, Optional
+from dataclasses import dataclass
+from collections import namedtuple
 
-ParsedData = List[List[int]]
+# Custom types for better readability and type safety
+Multiplication = namedtuple('Multiplication', ['x', 'y'])
+ParsedData = List[Multiplication]
+
 
 def parse_input(data: str) -> ParsedData:
-    parsedData = []
-    for line in data.split('\n'):
-        matches = re.findall(r'mul\((\d+),(\d+)\)', line)
-        for match in matches:
-            numbers = list(map(int, match))
-            parsedData.append(numbers)
+    parsed_data = []
+    pattern = r'mul\((\d+),\s*(\d+)\)'
 
-    return parsedData
+    try:
+        matches = re.finditer(pattern, data, re.MULTILINE)
+        for match in matches:
+            x, y = map(int, match.groups())
+            parsed_data.append(Multiplication(x, y))
+    except re.error as e:
+        raise ValueError(f"Invalid regex pattern: {e}")
+
+    return parsed_data
+
 
 def parse_input2(data: str) -> ParsedData:
-    parsedData = []
+    parsed_data = []
     allow_mul = True
-    for line in data.split('\n'):
-        matches = re.findall(r'(do\(\))|(don\'t\(\))|mul\((\d+),(\d+)\)', line)
+    pattern = r'(do\(\))|(don\'t\(\))|mul\((\d+),\s*(\d+)\)'
+
+    try:
+        matches = re.finditer(pattern, data, re.MULTILINE)
         for match in matches:
-            if match[0] == 'do()' :
+            do_cmd, dont_cmd, num1, num2 = match.groups()
+
+            if do_cmd:
                 allow_mul = True
                 continue
-            if match[1] == 'don\'t()':
-                    allow_mul = False
-                    continue
-            if not allow_mul:
+            if dont_cmd:
+                allow_mul = False
                 continue
-            numbers = [int(match[2]), int(match[3])]
-            parsedData.append(numbers)
 
-    return parsedData
+            if allow_mul and num1 and num2:
+                x, y = map(int, (num1, num2))
+                parsed_data.append(Multiplication(x, y))
+
+    except re.error as e:
+        raise ValueError(f"Invalid regex pattern: {e}")
+
+    return parsed_data
+
 
 def part1(data: ParsedData) -> int:
-    sum = 0
-    for i in range(len(data)):
-        sum += data[i][0] * data[i][1]
-    return sum
+   return sum(mul.x * mul.y for mul in data)
 
+def part2(data: ParsedData) -> Optional[int]:
+    result = sum(mul.x * mul.y for mul in data)
+    return result
 
-def part2(data: ParsedData) -> int:
-    sum = 0
-    for i in range(len(data)):
-        sum += data[i][0] * data[i][1]
-    return sum # 192767529 too high
+def solve(data: str, part: int = 1) -> Optional[int]:
+    if part not in (1, 2):
+        raise ValueError("Part must be 1 or 2")
 
+    parser = parse_input if part == 1 else parse_input2
+    solver = part1 if part == 1 else part2
 
-def solve(data: str, part: int = 1) -> int:
-    parsed_data = parse_input(data) if part == 1 else parse_input2(data)
-    return part1(parsed_data) if part == 1 else part2(parsed_data)
+    try:
+        parsed_data = parser(data)
+        return solver(parsed_data)
+    except (ValueError, TypeError) as e:
+        raise RuntimeError(f"Failed to solve part {part}: {str(e)}")
 
 
 def test() -> None:
     # Test part 1
     test_input = """
-xmul(2,4)%&mul[3,7]!@^do_not_mul(5,5)+mul(32,64]then(mul(11,8)mul(8,5))
-"""
+    xmul(2,4)%&mul[3,7]!@^do_not_mul(5,5)+mul(32,64]then(mul(11,8)mul(8,5))
+    """
     parsed_data = parse_input(test_input)
-    assert part1(parsed_data) == 161, "Part 1 test failed"
+    result = part1(parsed_data)
+    assert result == 161, f"Part 1 test failed: expected 161, got {result}"
     print("Part 1 tests passed!")
 
     # Test part 2
     test_input = """
-xmul(2,4)&mul[3,7]!^don't()_mul(5,5)+mul(32,64](mul(11,8)undo()?mul(8,5))
-"""
+    xmul(2,4)&mul[3,7]!^don't()_mul(5,5)+mul(32,64](mul(11,8)undo()?mul(8,5))
+    """
     parsed_data = parse_input2(test_input)
-    assert part2(parsed_data) == 48, "Part 2 test failed"
+    result = part2(parsed_data)
+    assert result == 48, f"Part 2 test failed: expected 48, got {result}"
     print("Part 2 tests passed!")
