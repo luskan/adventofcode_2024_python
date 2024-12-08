@@ -111,13 +111,16 @@ def main():
     args = parse_args()
 
     # Determine which days to run
-    days = args.days if args.days else range(1, 5)
+    days = args.days if args.days else range(1, 6)
 
     # Track overall success
     all_passed = True
 
+    start_time = time.time()
+
     # Run specified days
     for day in days:
+
         tests_passed = run_tests(day)
         all_passed = all_passed and tests_passed
 
@@ -126,8 +129,10 @@ def main():
             all_passed = all_passed and day_passed
 
     # Show final status
+    end_time = time.time()
+    print(f"\nTotal Time: {(end_time - start_time) * 1000:.2f}ms")
     status = "✅ All tests and solutions passed!" if all_passed else "❌ Some tests or solutions failed"
-    print(f"\nFinal Status: {status}")
+    print(f"Final Status: {status}")
     sys.exit(0 if all_passed else 1)
 
 

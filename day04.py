@@ -199,5 +199,5 @@ MXMXAXMASX
     print("Part 1 tests passed!")
 
     # Test part 2
-    verify_result(part2(parsed_data), 9, 1)
+    verify_result(part2(parsed_data), 9, 2)
     print("Part 2 tests passed!")
