@@ -178,7 +178,7 @@ def solve(data: str, part: int = 1) -> int:
     return part1(parsed_data) if part == 1 else part2(parsed_data)
 
 
-def test() -> None:
+def test(part) -> None:
     test_input = """
 MMMSXXMASM
 MSAMXMSMSA
@@ -194,10 +194,14 @@ MXMXAXMASX
 
     parsed_data = parse_input(test_input)
 
+    all_pass = True
+
     # Test part 1
-    verify_result(part1(parsed_data), 18, 1)
-    print("Part 1 tests passed!")
+    if part == 1:
+        all_pass = all_pass and verify_result(part1(parsed_data), 18, 1)
 
     # Test part 2
-    verify_result(part2(parsed_data), 9, 2)
-    print("Part 2 tests passed!")
+    if part == 2:
+        all_pass = all_pass and verify_result(part2(parsed_data), 9, 2)
+
+    return all_pass

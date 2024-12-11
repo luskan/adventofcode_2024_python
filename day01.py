@@ -1,5 +1,7 @@
 from typing import List, Tuple
 
+from common import verify_result
+
 ParsedData = Tuple[List[int], List[int]]
 
 def parse_input(data: str) -> ParsedData:
@@ -41,7 +43,7 @@ def solve(data: str, part: int = 1) -> int:
     return part1(parsed_data) if part == 1 else part2(parsed_data)
 
 
-def test() -> None:
+def test(part) -> bool:
     test_input = """
 3   4
 4   3
@@ -53,10 +55,13 @@ def test() -> None:
 
     parsed_data = parse_input(test_input)
 
-    # Test part 1
-    assert part1(parsed_data) == 11, "Part 1 test failed"
-    print("Part 1 tests passed!")
+    all_pass = True
+    if part == 1:
+        # Test part 1
+        all_pass = all_pass and verify_result(part1(parsed_data), 11, 1)
 
-    # Test part 2
-    assert part2(parsed_data) == 31, "Part 2 test failed"
-    print("Part 2 tests passed!")
+    if part == 2:
+        # Test part 2
+        all_pass = all_pass and verify_result(part2(parsed_data), 31, 2)
+
+    return all_pass

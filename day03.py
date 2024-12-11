@@ -1,7 +1,10 @@
 import re
+from operator import truediv
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
 from collections import namedtuple
+
+from common import verify_result
 
 # Custom types for better readability and type safety
 Multiplication = namedtuple('Multiplication', ['x', 'y'])
@@ -71,21 +74,25 @@ def solve(data: str, part: int = 1) -> Optional[int]:
         raise RuntimeError(f"Failed to solve part {part}: {str(e)}")
 
 
-def test() -> None:
-    # Test part 1
-    test_input = """
-    xmul(2,4)%&mul[3,7]!@^do_not_mul(5,5)+mul(32,64]then(mul(11,8)mul(8,5))
-    """
-    parsed_data = parse_input(test_input)
-    result = part1(parsed_data)
-    assert result == 161, f"Part 1 test failed: expected 161, got {result}"
-    print("Part 1 tests passed!")
+def test(part) -> bool:
+    all_pass = True
 
-    # Test part 2
-    test_input = """
-    xmul(2,4)&mul[3,7]!^don't()_mul(5,5)+mul(32,64](mul(11,8)undo()?mul(8,5))
-    """
-    parsed_data = parse_input2(test_input)
-    result = part2(parsed_data)
-    assert result == 48, f"Part 2 test failed: expected 48, got {result}"
-    print("Part 2 tests passed!")
+    if part == 1:
+        # Test part 1
+        test_input = """
+        xmul(2,4)%&mul[3,7]!@^do_not_mul(5,5)+mul(32,64]then(mul(11,8)mul(8,5))
+        """
+        parsed_data = parse_input(test_input)
+        result = part1(parsed_data)
+        all_pass = all_pass and verify_result(result, 161, 1)
+
+    if part == 2:
+        # Test part 2
+        test_input = """
+        xmul(2,4)&mul[3,7]!^don't()_mul(5,5)+mul(32,64](mul(11,8)undo()?mul(8,5))
+        """
+        parsed_data = parse_input2(test_input)
+        result = part2(parsed_data)
+        all_pass = all_pass and verify_result(result, 48, 2)
+
+    return all_pass

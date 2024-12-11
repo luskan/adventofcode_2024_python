@@ -1,9 +1,10 @@
 # main.py
 import importlib
 import time
-from pathlib import Path
 import sys
 import argparse
+
+from common import get_expected_results, run_day, run_tests
 
 
 # Directory structure:
@@ -23,81 +24,6 @@ import argparse
 #     ├── ...
 #     ├── day25.txt
 #     └── day25_test.txt
-
-def get_expected_results(day_num: int):
-    """Get expected results from result file."""
-    result_file = Path(f"../adventofcode_input/2024/data/day{day_num:02d}_result.txt")
-    if not result_file.exists():
-        return None, None
-
-    try:
-        lines = result_file.read_text().strip().split('\n')
-        return (lines[0].strip(), lines[1].strip()) if len(lines) >= 2 else (lines[0].strip(), None)
-    except Exception:
-        return None, None
-
-
-def verify_result(actual, expected, part_num):
-    """Verify if the actual result matches the expected result."""
-    if expected is None:
-        return "❓ (no expected result)"
-
-    actual_str = str(actual)
-    if actual_str == expected:
-        return f"✅ {actual}"
-    else:
-        return f"❌ Got: {actual}, Expected: {expected}"
-
-
-def run_day(day_num: int):
-    try:
-        day_module = importlib.import_module(f"day{day_num:02d}")
-        input_file = Path(f"../adventofcode_input/2024/data/day{day_num:02d}.txt")
-        if not input_file.exists():
-            print(f"No input file found for day {day_num}")
-            return False
-
-        data = input_file.read_text().strip()
-        expected_part1, expected_part2 = get_expected_results(day_num)
-
-        start_time = time.time()
-
-        # Run both parts and verify results
-        print(f"\nDay {day_num}:")
-        part1_result = day_module.solve(data, part=1)
-        part2_result = day_module.solve(data, part=2)
-
-        print(f"Part 1: {verify_result(part1_result, expected_part1, 1)}")
-        print(f"Part 2: {verify_result(part2_result, expected_part2, 2)}")
-
-        end_time = time.time()
-        print(f"Time: {(end_time - start_time) * 1000:.2f}ms")
-
-        # Return True if both parts match expected results
-        return (expected_part1 is None or str(part1_result) == expected_part1) and \
-            (expected_part2 is None or str(part2_result) == expected_part2)
-
-    except ImportError:
-        print(f"Day {day_num} not implemented yet")
-        return False
-    #except Exception as e:
-     #   print(f"Error running day {day_num}: {e}")
-      #  return False
-
-
-def run_tests(day_num: int):
-    """Run tests for a specific day."""
-    try:
-        day_module = importlib.import_module(f"day{day_num:02d}")
-        print(f"\nRunning tests for Day {day_num}:")
-        day_module.test()
-        return True
-    except ImportError:
-        print(f"Day {day_num} not implemented yet")
-        return False
-    #except Exception as e:
-     #   print(f"Error running tests for day {day_num}: {e}")
-     #   return False
 
 
 def parse_args():
