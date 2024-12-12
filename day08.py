@@ -35,6 +35,7 @@ def part1(data: ParsedData) -> int:
 
 def solver(data: ParsedData, part: int) -> int:
 
+
     antinodes: dict[str, set[Point]] = {}
     for key, tower in data.towers.items():
         #print(f"key: {key}, tower: {tower}")
