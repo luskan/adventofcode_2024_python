@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>3D Grid Visualization with Circular Border</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+
+    /* Style for the control instructions overlay */
+    #controls-info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.5);
+      color: #ffffff;
+      padding: 10px;
+      border-radius: 8px;
+      font-family: Arial, sans-serif;
+      z-index: 2;
+      max-width: 250px;
+    }
+
+    /* Style for the instructions prompt */
+    #instructions {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 300px;
+      text-align: center;
+      color: white;
+      font-family: Arial, sans-serif;
+      user-select: none;
+      cursor: pointer;
+      z-index: 1;
+      font-size: 24px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 20px;
+      border-radius: 10px;
+    }
+  </style>
+
+  <!-- Import Map for Three.js and its addons -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.153.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <!-- Control Instructions Overlay -->
+  <div id="controls-info">
+    <h3>Controls</h3>
+    <ul>
+      <li><strong>W/A/S/D</strong>: Move Forward/Left/Backward/Right</li>
+      <li><strong>Q/E</strong>: Move Up/Down</li>
+      <li><strong>Mouse</strong>: Look Around</li>
+      <li><strong>Click</strong>: Lock Pointer</li>
+      <li><strong>ESC</strong>: Unlock Pointer</li>
+    </ul>
+  </div>
+
+  <!-- Instructions Prompt -->
+  <div id="instructions">Click to Play</div>
+
+  <!-- Importing lil-gui for settings and map controls -->
+  <script type="module">
+    import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+    import * as THREE from 'three';
+    import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+    import { Lensflare, LensflareElement } from 'three/addons/objects/Lensflare.js';
+
+    // Initial Grid Data (Will be loaded from map1.txt)
+    let data = null;
+
+    // Scene, Camera, Renderer Setup
+    const scene = new THREE.Scene();
+
+    // Create a skybox using a simple gradient
+    const skyColorTop = new THREE.Color(0x87CEEB); // Light blue
+    const skyColorBottom = new THREE.Color(0xFFFFFF); // White
+    const skyGeometry = new THREE.SphereGeometry(1000, 32, 15);
+    const skyMaterial = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      side: THREE.BackSide,
+    });
+
+    // Create vertex colors for the gradient
+    const skyVertices = skyGeometry.attributes.position;
+    const colors = [];
+    for (let i = 0; i < skyVertices.count; i++) {
+      const y = skyVertices.getY(i);
+      const t = (y + 1000) / 2000; // Normalize y position
+      const color = skyColorBottom.clone().lerp(skyColorTop, t);
+      colors.push(color.r, color.g, color.b);
+    }
+    skyGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+    const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+    scene.add(sky);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(0, 20, 50); // Adjusted initial camera position for better view
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    // Basic Lights
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.7);
+    hemiLight.position.set(0, 200, 0);
+    scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight.position.set(100, 200, 100);
+    dirLight.castShadow = true;
+    dirLight.shadow.camera.top = 180;
+    dirLight.shadow.camera.bottom = -100;
+    dirLight.shadow.camera.left = -120;
+    dirLight.shadow.camera.right = 120;
+    scene.add(dirLight);
+
+    // Add a sun to the sky
+    const sunGeometry = new THREE.SphereGeometry(20, 32, 32);
+    const sunMaterial = new THREE.MeshBasicMaterial({
+      color: 0xFFFF00,
+      emissive: 0xFFFF00
+    });
+    const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+    sun.position.set(200, 400, -100); // Position the sun in the sky
+    scene.add(sun);
+
+    // Add lens flare to the sun
+    const textureLoader = new THREE.TextureLoader();
+    const textureFlare = textureLoader.load('https://threejs.org/examples/textures/lensflare/lensflare.png');
+
+    const lensflare = new Lensflare();
+    lensflare.addElement(new LensflareElement(textureFlare, 700, 0.0, new THREE.Color(0xffffff)));
+    sun.add(lensflare);
+
+    // Parameters for Blocks
+    const cellSize = 4;     // Horizontal size of each cell
+    let heightScale = 2;    // Initial Vertical scale factor (will be updated via GUI)
+    let tesselation = 6;    // Initial Tesselation (segments multiplier) - Changed to 6
+    let blocks = [];        // To keep track of block meshes
+    let smoothMesh = null;  // To keep track of the smooth terrain mesh
+
+    // Performance Metrics Variables
+    let frameCount = 0;
+    let lastTime = performance.now();
+    let fps = 0;
+
+    /**
+     * Adds a circular border of zeros around the original heightmap.
+     *
+     * @param {Object} gridData - The original heightmap data.
+     * @param {number} borderSize - The thickness of the border.
+     * @returns {Object} - The new grid data with a circular border.
+     */
+    function addCircularBorder(gridData, borderSize = 4) {
+      const newWidth = gridData.width + 2 * borderSize;
+      const newHeight = gridData.height + 2 * borderSize;
+      const newGrid = [];
+
+      // Calculate the center of the new grid
+      const centerX = newWidth / 2;
+      const centerZ = newHeight / 2;
+
+      // Calculate the radius of the original heightmap
+      const maxOriginalRadius = Math.sqrt(Math.pow(gridData.width / 2, 2) + Math.pow(gridData.height / 2, 2));
+
+      const totalRadius = maxOriginalRadius + borderSize;
+
+      for (let z = 0; z < newHeight; z++) {
+        const row = [];
+        for (let x = 0; x < newWidth; x++) {
+          // Calculate distance from the center
+          const dx = x - centerX + 0.5; // +0.5 to center the cells
+          const dz = z - centerZ + 0.5;
+          const distance = Math.sqrt(dx * dx + dz * dz);
+
+          if (distance > maxOriginalRadius && distance <= totalRadius) {
+            // Within the border ring
+            row.push(0);
+          } else {
+            // Within the heightmap area or outside the total radius
+            const originalX = x - borderSize;
+            const originalZ = z - borderSize;
+
+            // Boundary check to prevent accessing out-of-bound indices
+            if (
+              originalX >= 0 &&
+              originalX < gridData.width &&
+              originalZ >= 0 &&
+              originalZ < gridData.height
+            ) {
+              row.push(gridData.grid[originalZ][originalX]);
+            } else {
+              // If outside the original heightmap (due to non-square grids), set to zero
+              row.push(0);
+            }
+          }
+        }
+        newGrid.push(row);
+      }
+
+      return { grid: newGrid, width: newWidth, height: newHeight };
+    }
+
+    // Function to Smooth the Heightmap Data
+    function smoothHeightmap(gridData) {
+      const smoothedGrid = gridData.grid.map((row, y) => row.map((val, x) => {
+        let sum = val;
+        let count = 1;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <=1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const nx = x + dx;
+            const ny = y + dy;
+            if (nx >=0 && nx < gridData.width && ny >=0 && ny < gridData.height) {
+              sum += gridData.grid[ny][nx];
+              count++;
+            }
+          }
+        }
+        return sum / count;
+      }));
+      return { grid: smoothedGrid, width: gridData.width, height: gridData.height };
+    }
+
+    // Function to Create Blocks Based on Grid Data
+    function createBlocks(gridData) {
+      // Clear existing blocks and smooth mesh from the scene
+      blocks.forEach(block => scene.remove(block));
+      blocks = [];
+
+      if (smoothMesh) {
+        scene.remove(smoothMesh);
+        smoothMesh = null;
+      }
+
+      const startX = -(gridData.width * cellSize) / 2;
+      const startZ = -(gridData.height * cellSize) / 2;
+
+      for (let y = 0; y < gridData.height; y++) {
+        for (let x = 0; x < gridData.width; x++) {
+          const val = gridData.grid[y][x];
+          if (val > 0) {
+            const w = cellSize;
+            const h = val * heightScale;
+            const d = cellSize;
+            const geometry = new THREE.BoxGeometry(w, h, d);
+
+            // Determine color based on height
+            let colorVal;
+            if (h < 3 * heightScale) {
+              colorVal = 0x228B22; // Forest Green for low heights
+            } else if (h < 6 * heightScale) {
+              colorVal = 0x8B4513; // Saddle Brown for mid heights
+            } else {
+              colorVal = 0xA52A2A; // Brown for high heights
+            }
+
+            const mat = new THREE.MeshLambertMaterial({ color: colorVal });
+            const block = new THREE.Mesh(geometry, mat);
+            block.castShadow = true;
+            block.receiveShadow = true;
+            block.position.set(
+              startX + x * cellSize + cellSize / 2,
+              h / 2,
+              startZ + y * cellSize + cellSize / 2
+            );
+            scene.add(block);
+            blocks.push(block);
+          }
+        }
+      }
+    }
+
+    // Function to Create Smooth Terrain Based on Grid Data
+    function createSmoothTerrain(gridData) {
+      // Clear existing blocks and smooth mesh from the scene
+      blocks.forEach(block => scene.remove(block));
+      blocks = [];
+
+      if (smoothMesh) {
+        scene.remove(smoothMesh);
+        smoothMesh = null;
+      }
+
+      // Optionally smooth the heightmap data to reduce sharpness
+      const smoothedData = smoothHeightmap(gridData);
+
+      const width = smoothedData.width;
+      const height = smoothedData.height;
+
+      // Determine the number of segments based on tesselation
+      // tesselation defines the number of subdivisions per grid cell
+      // For example, tesselation = 6 means each grid cell is divided into 6 segments
+      const segmentsX = (width - 1) * tesselation;
+      const segmentsZ = (height - 1) * tesselation;
+
+      const geometry = new THREE.PlaneGeometry(width * cellSize, height * cellSize, segmentsX, segmentsZ);
+      geometry.rotateX(-Math.PI / 2); // Rotate to make it horizontal
+
+      // Adjust vertex heights based on the smoothed grid data
+      const vertices = geometry.attributes.position;
+      const grid = smoothedData.grid;
+      const gridWidth = smoothedData.width;
+      const gridHeight = smoothedData.height;
+
+      for (let i = 0; i < vertices.count; i++) {
+        const ix = i % (segmentsX + 1);
+        const iz = Math.floor(i / (segmentsX + 1));
+        // Calculate the corresponding grid indices
+        // Avoid floating-point inaccuracies by using Math.floor and clamping
+        const gridX = Math.min(Math.floor(ix / tesselation), gridWidth -1);
+        const gridZ = Math.min(Math.floor(iz / tesselation), gridHeight -1);
+        const heightValue = grid[gridZ][gridX] * heightScale;
+        vertices.setY(i, heightValue);
+      }
+      geometry.computeVertexNormals();
+
+      // Create a material with vertex colors based on height
+      const colors = [];
+      for (let i = 0; i < vertices.count; i++) {
+        const y = vertices.getY(i);
+        let colorVal;
+        if (y < 3 * heightScale) {
+          colorVal = new THREE.Color(0x228B22); // Forest Green
+        } else if (y < 6 * heightScale) {
+          colorVal = new THREE.Color(0x8B4513); // Saddle Brown
+        } else {
+          colorVal = new THREE.Color(0xA52A2A); // Brown
+        }
+        colors.push(colorVal.r, colorVal.g, colorVal.b);
+      }
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+      const material = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      smoothMesh = new THREE.Mesh(geometry, material);
+      smoothMesh.castShadow = true;
+      smoothMesh.receiveShadow = true;
+      scene.add(smoothMesh);
+    }
+
+    // Function to Render Map Based on Current Mode and Height Scale
+    function renderMap() {
+      if (settings.smoothMap) {
+        createSmoothTerrain(data);
+      } else {
+        createBlocks(data);
+      }
+      // No sea or ground plane to represent
+    }
+
+    // PointerLockControls for Navigation
+    const controls = new PointerLockControls(camera, renderer.domElement);
+
+    const instructions = document.getElementById('instructions');
+    instructions.addEventListener('click', () => {
+      controls.lock();
+    });
+
+    controls.addEventListener('lock', () => {
+      instructions.style.display = 'none';
+    });
+
+    controls.addEventListener('unlock', () => {
+      instructions.style.display = 'block';
+    });
+
+    // Movement Variables
+    const moveSpeed = 1.0; // Increased movement speed for better navigation
+    const keys = { forward: false, backward: false, left: false, right: false, up: false, down: false };
+
+    // Event Listeners for Keyboard Controls
+    document.addEventListener('keydown', (event) => {
+      switch (event.code) {
+        case 'KeyW':
+          keys.forward = true;
+          break;
+        case 'KeyS':
+          keys.backward = true;
+          break;
+        case 'KeyA':
+          keys.left = true;
+          break;
+        case 'KeyD':
+          keys.right = true;
+          break;
+        case 'KeyQ':
+          keys.up = true;
+          break;
+        case 'KeyE':
+          keys.down = true;
+          break;
+      }
+    });
+
+    document.addEventListener('keyup', (event) => {
+      switch (event.code) {
+        case 'KeyW':
+          keys.forward = false;
+          break;
+        case 'KeyS':
+          keys.backward = false;
+          break;
+        case 'KeyA':
+          keys.left = false;
+          break;
+        case 'KeyD':
+          keys.right = false;
+          break;
+        case 'KeyQ':
+          keys.up = false;
+          break;
+        case 'KeyE':
+          keys.down = false;
+          break;
+      }
+    });
+
+    // Function to Parse Heightmap Text into Grid Data
+    function parseHeightmap(text) {
+      const lines = text.trim().split('\n');
+      const grid = lines.map(line => line.trim().split('').map(char => parseInt(char, 10)));
+      const height = grid.length;
+      const width = grid[0].length;
+      return { grid, width, height };
+    }
+
+    // Function to Load Map from a Given URL
+    async function loadMap(url) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Failed to load map: ${response.statusText}`);
+        const text = await response.text();
+        let newData = parseHeightmap(text);
+        newData = addCircularBorder(newData, 4); // Add circular border of size 4
+        data = newData;
+        renderMap();
+      } catch (error) {
+        alert(error.message);
+      }
+    }
+
+    // Initialize lil-gui for Settings and Map Controls
+    const gui = new GUI({ title: 'Settings', width: 300 });
+
+    // Lighting Folder
+    const lightingFolder = gui.addFolder('Lighting');
+    lightingFolder.add(dirLight, 'intensity', 0, 2, 0.1).name('Directional Light Intensity');
+    lightingFolder.add(hemiLight, 'intensity', 0, 2, 0.1).name('Hemisphere Light Intensity');
+    lightingFolder.open();
+
+    // Map Controls Folder
+    const mapControlsFolder = gui.addFolder('Map Controls');
+
+    // Predefined Maps Dropdown
+    const mapOptions = {
+      'Map 1': 'map1.txt',
+      'Map 2': 'map2.txt'
+      // Add more predefined maps as needed
+    };
+
+    const settings = {
+      selectedMap: 'Map 1', // Set initial selected map to 'Map 1'
+      smoothMap: true,      // Changed to true to make smooth the default
+      heightScale: 2,       // Initial height scale
+      tesselation: 6,       // Changed to 6 to make it the default tesselation level
+      fps: 0,               // Initialize FPS
+      triangles: 0          // Initialize Triangles
+    };
+
+    mapControlsFolder.add(settings, 'selectedMap', Object.keys(mapOptions))
+      .name('Choose a Map')
+      .onChange((value) => {
+        const selectedMap = mapOptions[value];
+        if (selectedMap) {
+          loadMap(selectedMap);
+        }
+      });
+
+    // Add the Smooth Map Checkbox
+    mapControlsFolder.add(settings, 'smoothMap')
+      .name('Smooth Map')
+      .onChange(() => {
+        if (data) {
+          renderMap();
+        }
+      })
+      .setValue(settings.smoothMap); // Ensure the checkbox reflects the default state
+
+    // Add the Height Scaling Spinner
+    mapControlsFolder.add(settings, 'heightScale', 1, 10, 0.1)
+      .name('Height Scale')
+      .onChange(() => {
+        if (data) {
+          heightScale = settings.heightScale; // Update the global heightScale variable
+          renderMap();
+        }
+      });
+
+    // Add the Tesselation Slider
+    mapControlsFolder.add(settings, 'tesselation', 1, 10, 1)
+      .name('Tesselation')
+      .onChange(() => {
+        if (data && settings.smoothMap) {
+          tesselation = settings.tesselation; // Update the global tesselation variable
+          renderMap();
+        }
+      })
+      .setValue(settings.tesselation); // Ensure the slider reflects the default tesselation
+
+    // Add Performance Metrics Folder
+    const performanceFolder = mapControlsFolder.addFolder('Performance Metrics');
+
+    // Add FPS Display
+    performanceFolder.add(settings, 'fps')
+      .name('FPS')
+      .listen()
+      .disable(); // Make it read-only
+
+    // Add Triangles Display
+    performanceFolder.add(settings, 'triangles')
+      .name('Triangles')
+      .listen()
+      .disable(); // Make it read-only
+
+    performanceFolder.open();
+
+    // Custom File Upload
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.txt';
+    fileInput.style.display = 'none'; // Hide the default input
+
+    // Create a button for file upload
+    const uploadButton = document.createElement('button');
+    uploadButton.textContent = 'Upload Custom Map';
+    uploadButton.style.marginTop = '10px';
+    uploadButton.style.width = '100%';
+    uploadButton.style.padding = '5px';
+    uploadButton.style.cursor = 'pointer';
+
+    // When the button is clicked, trigger the file input
+    uploadButton.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    // When a file is selected, process it
+    fileInput.addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      if (file && file.type === "text/plain") {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const text = e.target.result;
+          let newData = parseHeightmap(text);
+          newData = addCircularBorder(newData, 4); // Add circular border of size 4
+          data = newData;
+          renderMap();
+        };
+        reader.readAsText(file);
+      } else {
+        alert("Please upload a valid .txt file.");
+      }
+      // Reset the input value to allow uploading the same file again if needed
+      fileInput.value = '';
+    });
+
+    // Append the upload button to the map controls folder
+    mapControlsFolder.domElement.appendChild(uploadButton);
+
+    mapControlsFolder.open();
+
+    // Load the initial map (Map 1)
+    loadMap(mapOptions[settings.selectedMap]);
+
+    // Animation Loop
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // FPS Calculation
+      frameCount++;
+      const currentTime = performance.now();
+      const delta = currentTime - lastTime;
+      if (delta >= 1000) {
+        fps = frameCount;
+        settings.fps = fps;
+        frameCount = 0;
+        lastTime = currentTime;
+      }
+
+      // Update Triangles Count
+      settings.triangles = renderer.info.render.triangles;
+
+      if (controls.isLocked) {
+        // Handle horizontal movement
+        if (keys.forward) controls.moveForward(moveSpeed);
+        if (keys.backward) controls.moveForward(-moveSpeed);
+        if (keys.left) controls.moveRight(-moveSpeed);
+        if (keys.right) controls.moveRight(moveSpeed);
+
+        // Handle vertical movement
+        if (keys.up) {
+          controls.getObject().position.y += moveSpeed;
+        }
+        if (keys.down) {
+          controls.getObject().position.y -= moveSpeed;
+          // Prevent the camera from going below the minimum height
+          controls.getObject().position.y = Math.max(controls.getObject().position.y, 1);
+        }
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // Handle Window Resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }, false);
+  </script>
+</body>
+</html>
