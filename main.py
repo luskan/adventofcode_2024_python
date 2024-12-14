@@ -37,7 +37,7 @@ def main():
     args = parse_args()
 
     # Determine which days to run
-    days = args.days if args.days else range(1, 10)
+    days = args.days if args.days else range(1, 11)
 
     # Track overall success
     all_passed = True
