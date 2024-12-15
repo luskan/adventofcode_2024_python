@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>3D Grid Visualization with Circular Border</title>
+  <title>3D Terrain Visualization with Comprehensive Pathfinding</title>
   <style>
     body { margin: 0; overflow: hidden; }
 
@@ -39,6 +39,38 @@
       padding: 20px;
       border-radius: 10px;
     }
+
+    /* Toast Notification Styles */
+    #toast {
+      visibility: hidden; /* Hidden by default */
+      min-width: 250px;
+      background-color: rgba(0, 0, 0, 0.8);
+      color: #fff;
+      text-align: center;
+      border-radius: 4px;
+      padding: 16px;
+      position: fixed;
+      z-index: 1000;
+      left: 50%;
+      bottom: 30px;
+      transform: translateX(-50%);
+      font-family: Arial, sans-serif;
+    }
+
+    #toast.show {
+      visibility: visible; /* Show the toast */
+      animation: fadein 0.5s, fadeout 0.5s 2.5s;
+    }
+
+    @keyframes fadein {
+      from { bottom: 0; opacity: 0; }
+      to { bottom: 30px; opacity: 1; }
+    }
+
+    @keyframes fadeout {
+      from { bottom: 30px; opacity: 1; }
+      to { bottom: 0; opacity: 0; }
+    }
   </style>
 
   <!-- Import Map for Three.js and its addons -->
@@ -67,6 +99,9 @@
   <!-- Instructions Prompt -->
   <div id="instructions">Click to Play</div>
 
+  <!-- Toast Notification -->
+  <div id="toast"></div>
+
   <!-- Importing lil-gui for settings and map controls -->
   <script type="module">
     import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
@@ -74,8 +109,10 @@
     import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
     import { Lensflare, LensflareElement } from 'three/addons/objects/Lensflare.js';
 
-    // Initial Grid Data (Will be loaded from map1.txt)
-    let data = null;
+    // Define variables to store original and bordered data
+    let originalData = null; // To store the original heightmap
+    let borderedData = null; // To store the bordered heightmap for rendering
+    let data = null; // Current data used for rendering
 
     // Scene, Camera, Renderer Setup
     const scene = new THREE.Scene();
@@ -146,7 +183,7 @@
     // Parameters for Blocks
     const cellSize = 4;     // Horizontal size of each cell
     let heightScale = 2;    // Initial Vertical scale factor (will be updated via GUI)
-    let tesselation = 6;    // Initial Tesselation (segments multiplier) - Changed to 6
+    let tesselation = 6;    // Initial Tesselation (segments multiplier)
     let blocks = [];        // To keep track of block meshes
     let smoothMesh = null;  // To keep track of the smooth terrain mesh
 
@@ -156,7 +193,7 @@
     let fps = 0;
 
     /**
-     * Adds a circular border of zeros around the original heightmap.
+     * Adds a circular border of height -1 around the original heightmap.
      *
      * @param {Object} gridData - The original heightmap data.
      * @param {number} borderSize - The thickness of the border.
@@ -186,7 +223,7 @@
 
           if (distance > maxOriginalRadius && distance <= totalRadius) {
             // Within the border ring
-            row.push(0);
+            row.push(-1); // Set border height to -1
           } else {
             // Within the heightmap area or outside the total radius
             const originalX = x - borderSize;
@@ -201,8 +238,8 @@
             ) {
               row.push(gridData.grid[originalZ][originalX]);
             } else {
-              // If outside the original heightmap (due to non-square grids), set to zero
-              row.push(0);
+              // If outside the original heightmap (due to non-square grids), set to -1
+              row.push(-1);
             }
           }
         }
@@ -352,11 +389,12 @@
     // Function to Render Map Based on Current Mode and Height Scale
     function renderMap() {
       if (settings.smoothMap) {
-        createSmoothTerrain(data);
+        createSmoothTerrain(borderedData); // Use borderedData for rendering
       } else {
-        createBlocks(data);
+        createBlocks(borderedData); // Use borderedData for rendering
       }
-      // No sea or ground plane to represent
+      // Clear any existing paths when the map is re-rendered
+      clearPaths();
     }
 
     // PointerLockControls for Navigation
@@ -428,8 +466,8 @@
 
     // Function to Parse Heightmap Text into Grid Data
     function parseHeightmap(text) {
-      const lines = text.trim().split('\n');
-      const grid = lines.map(line => line.trim().split('').map(char => parseInt(char, 10)));
+      const lines = text.trim().split('\n').map(line => line.trim()).filter(line => line.length > 0);
+      const grid = lines.map(line => line.split('').map(char => parseInt(char, 10)));
       const height = grid.length;
       const width = grid[0].length;
       return { grid, width, height };
@@ -441,12 +479,14 @@
         const response = await fetch(url);
         if (!response.ok) throw new Error(`Failed to load map: ${response.statusText}`);
         const text = await response.text();
-        let newData = parseHeightmap(text);
-        newData = addCircularBorder(newData, 4); // Add circular border of size 4
-        data = newData;
+        let parsedData = parseHeightmap(text);
+        originalData = parsedData; // Store original data
+        borderedData = addCircularBorder(parsedData, 4); // Create bordered data
+        data = borderedData; // Use bordered data for rendering
         renderMap();
+        showToast("Map loaded successfully!");
       } catch (error) {
-        alert(error.message);
+        showToast(error.message);
       }
     }
 
@@ -471,9 +511,9 @@
 
     const settings = {
       selectedMap: 'Map 1', // Set initial selected map to 'Map 1'
-      smoothMap: true,      // Changed to true to make smooth the default
+      smoothMap: true,      // Make smooth the default
       heightScale: 2,       // Initial height scale
-      tesselation: 6,       // Changed to 6 to make it the default tesselation level
+      tesselation: 6,       // Default tesselation level
       fps: 0,               // Initialize FPS
       triangles: 0          // Initialize Triangles
     };
@@ -491,17 +531,17 @@
     mapControlsFolder.add(settings, 'smoothMap')
       .name('Smooth Map')
       .onChange(() => {
-        if (data) {
+        if (borderedData) {
           renderMap();
         }
       })
-      .setValue(settings.smoothMap); // Ensure the checkbox reflects the default state
+      .setValue(settings.smoothMap); // Reflect the default state
 
     // Add the Height Scaling Spinner
     mapControlsFolder.add(settings, 'heightScale', 1, 10, 0.1)
       .name('Height Scale')
       .onChange(() => {
-        if (data) {
+        if (borderedData) {
           heightScale = settings.heightScale; // Update the global heightScale variable
           renderMap();
         }
@@ -511,12 +551,12 @@
     mapControlsFolder.add(settings, 'tesselation', 1, 10, 1)
       .name('Tesselation')
       .onChange(() => {
-        if (data && settings.smoothMap) {
+        if (borderedData && settings.smoothMap) {
           tesselation = settings.tesselation; // Update the global tesselation variable
           renderMap();
         }
       })
-      .setValue(settings.tesselation); // Ensure the slider reflects the default tesselation
+      .setValue(settings.tesselation); // Reflect the default tesselation
 
     // Add Performance Metrics Folder
     const performanceFolder = mapControlsFolder.addFolder('Performance Metrics');
@@ -562,13 +602,15 @@
         reader.onload = function(e) {
           const text = e.target.result;
           let newData = parseHeightmap(text);
-          newData = addCircularBorder(newData, 4); // Add circular border of size 4
-          data = newData;
+          originalData = newData; // Update original data
+          borderedData = addCircularBorder(newData, 4); // Update bordered data
+          data = borderedData; // Use bordered data for rendering
           renderMap();
+          showToast("Custom map loaded successfully!");
         };
         reader.readAsText(file);
       } else {
-        alert("Please upload a valid .txt file.");
+        showToast("Please upload a valid .txt file.");
       }
       // Reset the input value to allow uploading the same file again if needed
       fileInput.value = '';
@@ -578,6 +620,342 @@
     mapControlsFolder.domElement.appendChild(uploadButton);
 
     mapControlsFolder.open();
+
+    // === New Section: Path Controls ===
+
+    // Add a new folder for Path Controls
+    const pathControlsFolder = gui.addFolder('Path Controls');
+
+    // Add "Next Path" and "Previous Path" buttons
+    const pathSettings = {
+      nextPath: () => {
+        if (originalData) { // Use originalData instead of data
+          if (!pathsCalculated) {
+            calculatePaths();
+          }
+          showNextPath();
+        } else {
+          showToast("Please load a map first.");
+        }
+      },
+      prevPath: () => {
+        if (originalData) { // Use originalData instead of data
+          if (!pathsCalculated) {
+            calculatePaths();
+          }
+          showPrevPath();
+        } else {
+          showToast("Please load a map first.");
+        }
+      }
+    };
+
+    pathControlsFolder.add(pathSettings, 'nextPath').name('Next Path');
+    pathControlsFolder.add(pathSettings, 'prevPath').name('Previous Path');
+    pathControlsFolder.open();
+
+    // === New Variables for Path Management ===
+    let allPaths = [];          // Array to store all found paths
+    let currentPathIndex = -1;  // Current path index
+    let pathsCalculated = false; // Flag to check if paths are already calculated
+    let pathLine = null;        // Current path line in the scene
+
+    // === Path Information Display ===
+    // Add a text element to display path information
+    const pathInfo = document.createElement('div');
+    pathInfo.style.position = 'absolute';
+    pathInfo.style.bottom = '10px';
+    pathInfo.style.left = '270px'; // Adjusted to not overlap with toast
+    pathInfo.style.color = '#ffffff';
+    pathInfo.style.fontFamily = 'Arial, sans-serif';
+    pathInfo.style.background = 'rgba(0, 0, 0, 0.5)';
+    pathInfo.style.padding = '10px';
+    pathInfo.style.borderRadius = '8px';
+    pathInfo.innerHTML = 'Path: 0/0';
+    document.body.appendChild(pathInfo);
+
+    // === Toast Notification Functions ===
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.className = 'show';
+      setTimeout(() => { toast.className = toast.className.replace('show', ''); }, 3000);
+    }
+
+    // === Pathfinding Functions ===
+
+    // Function to retrieve all start positions (cells with height 0)
+    function getAllStartPositions(gridData) {
+      const startPositions = [];
+      for (let z = 0; z < gridData.height; z++) {
+        for (let x = 0; x < gridData.width; x++) {
+          if (gridData.grid[z][x] === 0) {
+            startPositions.push({ x, z });
+          }
+        }
+      }
+      return startPositions;
+    }
+
+    // Function to find all paths from a single start point using originalData
+    function findAllPathsFromStart(startX, startZ, gridData) {
+      const paths = [];
+      const width = gridData.width;
+      const height = gridData.height;
+      const grid = gridData.grid;
+
+      // Directions: up, down, left, right
+      const directions = [
+        { dx: 0, dz: -1 },
+        { dx: 0, dz: 1 },
+        { dx: -1, dz: 0 },
+        { dx: 1, dz: 0 }
+      ];
+
+      // Recursive DFS function to find paths
+      function dfs(x, z, currentPath, currentHeight) {
+        // If current height is 9, add the path to paths
+        if (currentHeight === 9) {
+          paths.push([...currentPath]);
+          console.log(`Path Found: ${currentPath.map(p => `(${p.x},${p.z})`).join(' -> ')}`);
+          return;
+        }
+
+        // Explore all possible directions
+        for (const dir of directions) {
+          const newX = x + dir.dx;
+          const newZ = z + dir.dz;
+
+          // Boundary check
+          if (newX < 0 || newX >= width || newZ < 0 || newZ >= height) continue;
+
+          const nextHeight = grid[newZ][newX];
+
+          // Check if the next height is exactly +1
+          if (nextHeight === currentHeight + 1) {
+            // Avoid cycles by ensuring the cell is not already in the path
+            const alreadyInPath = currentPath.some(pos => pos.x === newX && pos.z === newZ);
+            if (!alreadyInPath) {
+              currentPath.push({ x: newX, z: newZ });
+              dfs(newX, newZ, currentPath, nextHeight);
+              currentPath.pop();
+            }
+          }
+        }
+      }
+
+      dfs(startX, startZ, [{ x: startX, z: startZ }], grid[startZ][startX]);
+
+      return paths;
+    }
+
+    // Function to calculate all paths from all start positions
+    function calculatePaths() {
+      if (!originalData) {
+        showToast("Original heightmap data is not loaded.");
+        return;
+      }
+
+      const startPositions = getAllStartPositions(originalData);
+
+      if (startPositions.length === 0) {
+        showToast("No starting positions with height 0 found within the original map.");
+        return;
+      }
+
+      console.log(`Total Start Positions Found: ${startPositions.length}`);
+
+      allPaths = []; // Reset allPaths before accumulating
+
+      const MAX_PATHS = 1000; // Define a maximum number of paths to prevent excessive computation
+
+      for (let i = 0; i < startPositions.length; i++) {
+        const startPos = startPositions[i];
+        console.log(`Calculating paths from Start Position ${i + 1}: x=${startPos.x}, z=${startPos.z}`);
+        const pathsFromStart = findAllPathsFromStart(startPos.x, startPos.z, originalData);
+        console.log(`Paths Found from Start Position ${i + 1}: ${pathsFromStart.length}`);
+        allPaths.push(...pathsFromStart);
+
+        // Check if MAX_PATHS is reached
+        if (allPaths.length >= MAX_PATHS) {
+          allPaths = allPaths.slice(0, MAX_PATHS);
+          showToast(`Maximum path limit of ${MAX_PATHS} reached. Some paths may not be displayed.`);
+          break;
+        }
+      }
+
+      console.log(`Total Paths Found: ${allPaths.length}`);
+
+      if (allPaths.length === 0) {
+        showToast("No paths found from any starting positions. Ensure your heightmap contains valid paths from height 0 to height 9.");
+        return;
+      }
+
+      currentPathIndex = 0;
+      pathsCalculated = true;
+      displayCurrentPath();
+    }
+
+    // Function to display the current path using TubeGeometry for better visibility
+    function displayCurrentPath() {
+      // Clear existing path line
+      if (pathLine) {
+        scene.remove(pathLine);
+        pathLine.geometry.dispose();
+        pathLine.material.dispose();
+        pathLine = null;
+      }
+
+      const path = allPaths[currentPathIndex];
+      if (!path) return;
+
+      // Determine the maximum height in the current path
+      let maxHeight = 0;
+      path.forEach(pos => {
+        const currentHeight = originalData.grid[pos.z][pos.x] * heightScale;
+        if (currentHeight > maxHeight) {
+          maxHeight = currentHeight;
+        }
+      });
+
+      const yOffset = 5; // Additional offset to ensure the path is above the terrain
+      const elevatedY = maxHeight + yOffset;
+
+      const points = [];
+
+      path.forEach(pos => {
+        const xPos = -(originalData.width * cellSize) / 2 + pos.x * cellSize + cellSize / 2;
+        const zPos = -(originalData.height * cellSize) / 2 + pos.z * cellSize + cellSize / 2;
+        // Set Y to the maximum height in the path plus offset
+        points.push(new THREE.Vector3(xPos, elevatedY, zPos));
+      });
+
+      const pathCurve = new THREE.CatmullRomCurve3(points);
+      const tubeGeometry = new THREE.TubeGeometry(pathCurve, 64, 0.5, 8, false);
+      const tubeMaterial = new THREE.MeshBasicMaterial({ color: 0x0000FF }); // Blue color
+      pathLine = new THREE.Mesh(tubeGeometry, tubeMaterial);
+      scene.add(pathLine);
+
+      // Optionally, add markers for start and end points
+      addMarkers(path[0], path[path.length - 1]);
+
+      // Log the current path
+      console.log(`Displaying path ${currentPathIndex + 1} of ${allPaths.length}`);
+
+      // Update Path Information Display
+      if (pathInfo) {
+        pathInfo.innerHTML = `Path: ${currentPathIndex + 1}/${allPaths.length}`;
+      }
+    }
+
+    // Function to show the next path
+    function showNextPath() {
+      if (currentPathIndex < allPaths.length - 1) {
+        currentPathIndex++;
+        displayCurrentPath();
+      } else {
+        showToast("You have reached the last path.");
+      }
+    }
+
+    // Function to show the previous path
+    function showPrevPath() {
+      if (currentPathIndex > 0) {
+        currentPathIndex--;
+        displayCurrentPath();
+      } else {
+        showToast("You are at the first path.");
+      }
+    }
+
+    // Function to clear all paths
+    function clearPaths() {
+      // Reset path variables
+      allPaths = [];
+      currentPathIndex = -1;
+      pathsCalculated = false;
+
+      // Remove existing path line
+      if (pathLine) {
+        scene.remove(pathLine);
+        pathLine.geometry.dispose();
+        pathLine.material.dispose();
+        pathLine = null;
+      }
+
+      // Remove markers if any
+      removeMarkers();
+
+      // Reset path information display
+      if (pathInfo) {
+        pathInfo.innerHTML = 'Path: 0/0';
+      }
+    }
+
+    // === Optional: Add Start and End Markers ===
+    let startMarker = null;
+    let endMarker = null;
+
+    function addMarkers(startPos, endPos) {
+      // Create a sphere for the start marker
+      const startGeometry = new THREE.SphereGeometry(2, 32, 32);
+      const startMaterial = new THREE.MeshBasicMaterial({ color: 0x00FF00 }); // Green
+      startMarker = new THREE.Mesh(startGeometry, startMaterial);
+      startMarker.position.set(
+        -(originalData.width * cellSize) / 2 + startPos.x * cellSize + cellSize / 2,
+        originalData.grid[startPos.z][startPos.x] * heightScale + 3, // Increased Y for visibility
+        -(originalData.height * cellSize) / 2 + startPos.z * cellSize + cellSize / 2
+      );
+      scene.add(startMarker);
+
+      // Create a sphere for the end marker
+      const endGeometry = new THREE.SphereGeometry(2, 32, 32);
+      const endMaterial = new THREE.MeshBasicMaterial({ color: 0x0000FF }); // Blue
+      endMarker = new THREE.Mesh(endGeometry, endMaterial);
+      endMarker.position.set(
+        -(originalData.width * cellSize) / 2 + endPos.x * cellSize + cellSize / 2,
+        originalData.grid[endPos.z][endPos.x] * heightScale + 3, // Increased Y for visibility
+        -(originalData.height * cellSize) / 2 + endPos.z * cellSize + cellSize / 2
+      );
+      scene.add(endMarker);
+    }
+
+    function removeMarkers() {
+      if (startMarker) {
+        scene.remove(startMarker);
+        startMarker.geometry.dispose();
+        startMarker.material.dispose();
+        startMarker = null;
+      }
+      if (endMarker) {
+        scene.remove(endMarker);
+        endMarker.geometry.dispose();
+        endMarker.material.dispose();
+        endMarker = null;
+      }
+    }
+
+    // === Updated File Upload Handling ===
+    fileInput.addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      if (file && file.type === "text/plain") {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const text = e.target.result;
+          let newData = parseHeightmap(text);
+          originalData = newData; // Update original data
+          borderedData = addCircularBorder(newData, 4); // Update bordered data
+          data = borderedData; // Use bordered data for rendering
+          renderMap();
+          showToast("Custom map loaded successfully!");
+        };
+        reader.readAsText(file);
+      } else {
+        showToast("Please upload a valid .txt file.");
+      }
+      // Reset the input value to allow uploading the same file again if needed
+      fileInput.value = '';
+    });
 
     // Load the initial map (Map 1)
     loadMap(mapOptions[settings.selectedMap]);

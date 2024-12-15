@@ -122,7 +122,9 @@ def draw_grid_with_paths(data: ParsedData, paths: List[List[Point]], max_height:
 def solver(data: ParsedData, part: int) -> int:
     total = 0
 
-    ENABLE_SAVE_2_GIF = True
+    ENABLE_SAVE_2_GIF = False
+    if (ENABLE_SAVE_2_GIF):
+        print("!!!! SLOW !!!! Saving to GIF")
 
     for y in range(data.height):
         for x in range(data.width):
