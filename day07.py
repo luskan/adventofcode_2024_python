@@ -136,7 +136,7 @@ def solve(data: str, part: int = 1) -> int:
     return part1(parsed_data) if part == 1 else part2(parsed_data)
 
 
-def test(part) -> None:
+def test(part) -> bool:
     test_input = """
 190: 10 19
 3267: 81 40 27

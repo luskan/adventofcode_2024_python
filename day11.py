@@ -64,7 +64,7 @@ def solve(data: str, part: int = 1) -> int:
     parsed_data = parse_input(data)
     return part1(parsed_data) if part == 1 else part2(parsed_data)
 
-def test(part) -> None:
+def test(part) -> bool:
     test_input = """
 0 1 10 99 999
 """
