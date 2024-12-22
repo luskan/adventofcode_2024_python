@@ -2,7 +2,6 @@ from common import run_tests, run_day, verify_result
 from typing import List, Tuple, Dict, Optional
 import heapq
 
-# Class to hold parsed data
 class ParsedData:
     __slots__ = ["grid", "start", "end"]
 
