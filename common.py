@@ -1,3 +1,4 @@
+import difflib
 import importlib
 import time
 from pathlib import Path
@@ -97,3 +98,30 @@ def run_day(day_num: int, part1: bool = True, part2: bool = True) -> bool:
     except ImportError:
         print(f"Day {day_num} not implemented yet")
         return False
+
+def git_like_diff(str1, str2, fromfile='String1', tofile='String2', lineterm='\n'):
+    """
+    Generates a Git-like unified diff between two strings.
+
+    :param str1: The original string.
+    :param str2: The modified string.
+    :param fromfile: Label for the original string in the diff header.
+    :param tofile: Label for the modified string in the diff header.
+    :param lineterm: Line terminator (default is newline).
+    :return: A string representing the unified diff.
+    """
+    # Split the strings into lines
+    lines1 = str1.splitlines()
+    lines2 = str2.splitlines()
+
+    # Generate the unified diff
+    diff = difflib.unified_diff(
+        lines1,
+        lines2,
+        fromfile=fromfile,
+        tofile=tofile,
+        lineterm=lineterm
+    )
+
+    # Join the diff into a single string
+    return '\n'.join(diff)
