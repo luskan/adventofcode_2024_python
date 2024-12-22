@@ -16,7 +16,6 @@ OPCODE_MAPPING = {
     # Extend this mapping if there are more opcodes
 }
 
-# Class to hold parsed data
 class ParsedData:
     __slots__ = ["register_a", "register_b", "register_c", "program"]
 
