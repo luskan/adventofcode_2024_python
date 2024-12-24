@@ -1,11 +1,8 @@
-import heapq
+from collections import deque
 from typing import List, Tuple, Set, Dict, Optional
-from collections import deque, defaultdict
 
-from common import run_tests, run_day, git_like_diff, verify_result
+from common import run_day, verify_result, run_tests
 
-
-# Class to store parsed data
 class ParsedData:
     __slots__ = ["grid", "start", "end", "rows", "cols"]
 
@@ -15,7 +12,6 @@ class ParsedData:
         self.end: Tuple[int, int] = (-1, -1)
         self.rows: int = 0
         self.cols: int = 0
-
 
 def parse_input(data: str) -> ParsedData:
     result = ParsedData()
@@ -32,202 +28,151 @@ def parse_input(data: str) -> ParsedData:
     return result
 
 
-
-def printMap(grid: List[List[str]],
-             path: List[Tuple[int, int]] = None,
-             cheat_steps: List[Tuple[int, int]] = None) -> None:
+Point2 = Tuple[int, int]
+def bfs_with_path(grid: List[List[str]], start: Point2, end: Point2) -> Tuple[List[List[int]], List[Point2]]:
     """
-    Prints the map with the path and cheat steps overlaid.
+    Perform BFS to assign distances from the start to all reachable cells and reconstruct the shortest path to the end.
 
     Parameters:
     - grid (List[List[str]]): The racetrack map.
-    - path (List[Tuple[int, int]], optional): The sequence of positions from start to end.
-    - cheat_steps (Dict[int, str], optional): A mapping from path indices to cheat labels ('1' or '2').
+    - start (Point2): Starting position (row, column).
+    - end (Point2): Ending position (row, column).
 
     Returns:
-    - None
-    """
-    # Create a deep copy of the grid to overlay the path and cheats
-    grid_copy = [row.copy() for row in grid]
-
-    if path:
-        for index, (r, c) in enumerate(path):
-            # Skip the start and end positions to preserve 'S' and 'E'
-            if grid_copy[r][c] in ('S', 'E'):
-                continue
-
-            # Check if the current path step is part of a cheat
-            if cheat_steps and (r, c) in cheat_steps:
-                grid_copy[r][c] = str(cheat_steps.index((r, c))+1) # Mark with '1' or '2'
-            else:
-                grid_copy[r][c] = '\033[91mO\033[0m'  # Mark the path
-
-    # Print the modified grid
-    for row in grid_copy:
-        print(''.join(row))
-
-
-def a_star_min_time(grid: List[List[str]],
-                    start: Tuple[int, int],
-                    end: Tuple[int, int],
-                    cheat_start_time: int,
-                    valid_cheat_positions: List[Tuple[int, int]],
-                    return_path: bool = False) -> Tuple[int, List[Tuple[int, int]]]:
-    """
-    Perform A* search to find the shortest path from start to end considering cheat time.
-    Returns a tuple containing:
-        - The minimal time (number of moves) to reach the end.
-        - The path as a list of (row, column) tuples from start to end.
+    - Tuple containing:
+        - distances (List[List[int]]): 2D grid of distances from the start. Unreachable cells have distance -1.
+        - path (List[Point2]): The shortest path from start to end as a list of (row, column) tuples. Empty if no path exists.
     """
     rows, cols = len(grid), len(grid[0])
 
-    def heuristic(a: Tuple[int, int], b: Tuple[int, int]) -> int:
-        """Manhattan distance heuristic."""
-        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+    # Initialize the distance grid with -1 (unreachable)
+    distances = [[-1 for _ in range(cols)] for _ in range(rows)]
 
-    # Priority queue elements: (f_cost, g_cost, (r, c))
-    open_set = []
-    start_h = heuristic(start, end)
-    heapq.heappush(open_set, (start_h, 0, start))
+    # Initialize the predecessor grid with None
+    predecessors: List[List[Optional[Point2]]] = [[None for _ in range(cols)] for _ in range(rows)]
 
-    # Maps (r, c) to its predecessor
-    came_from: Dict[Tuple[int, int], Optional[Tuple[int, int]]] = {start: None}
-
-    # Maps (r, c) to the lowest g_cost found so far
-    g_cost: Dict[Tuple[int, int], int] = {start: 0}
+    # Initialize the BFS queue
+    queue = deque()
+    queue.append(start)
+    distances[start[0]][start[1]] = 0  # Distance to start is 0
 
     # Define movement directions: Up, Down, Left, Right
     directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
-    while open_set:
-        current_f, current_g, current = heapq.heappop(open_set)
+    while queue:
+        current = queue.popleft()
         r, c = current
+        current_distance = distances[r][c]
 
-        # Check if we've reached the end
+        # Early termination if end is reached
         if current == end:
-            # Reconstruct the path from end to start
-            path = []
-            if return_path:
-                while current is not None:
-                    path.append(current)
-                    current = came_from[current]
-                path.reverse()
-            return current_g, path
-
-        # Determine the current time based on g_cost
-        time = current_g
-
-        is_cheat = cheat_start_time != -1 and cheat_start_time <= time <= cheat_start_time + 1
-
-        # If not in cheat time and current cell is a wall, skip
-        if not is_cheat and grid[r][c] == '#':
-            continue
+            break
 
         for dr, dc in directions:
             nr, nc = r + dr, c + dc
-            neighbor = (nr, nc)
-
-            # Check boundaries
             if 0 <= nr < rows and 0 <= nc < cols:
-                # Determine if the neighbor cell can be traversed
+                # Check if the cell is not a wall and not visited
+                if grid[nr][nc] != '#' and distances[nr][nc] == -1:
+                    distances[nr][nc] = current_distance + 1
+                    predecessors[nr][nc] = (r, c)
+                    queue.append((nr, nc))
 
-                if is_cheat and cheat_start_time == 20 and neighbor == (9,8) and (8,10) in valid_cheat_positions:
-                    pass
+    # Reconstruct the path from end to start
+    path: List[Point2] = []
+    if distances[end[0]][end[1]] != -1:
+        current = end
+        while current != start:
+            path.append(current)
+            current = predecessors[current[0]][current[1]]
+            if current is None:
+                # This should not happen as we have a valid path
+                break
+        path.append(start)
+        path.reverse()  # Path from start to end
 
-                if (is_cheat and neighbor in valid_cheat_positions or grid[nr][nc] != '#') and neighbor not in came_from:
-                    tentative_g = current_g + 1  # Assuming uniform cost
-                    if neighbor not in g_cost or tentative_g < g_cost[neighbor]:
-                        g_cost[neighbor] = tentative_g
-                        f_cost = tentative_g + heuristic(neighbor, end)
-                        heapq.heappush(open_set, (f_cost, tentative_g, neighbor))
-                        if return_path:
-                            came_from[neighbor] = current
+    return distances, path
 
-    # If the end is not reachable
-    return -1, []
-
-
-Point2 = Tuple[int, int]
-CheatsDict = Dict[int, List[Tuple[Point2, Point2]]]
-def find_all_valid_cheats(data: ParsedData) -> CheatsDict:
+Shortcuts = Set[Tuple[int, int, int, int, int]] # (r, c, nr, nc, savings) - shortcut_start, shortcut_end, savings
+def find_shortcuts(data: ParsedData, minimum_savings: int, max_delta: int) -> Shortcuts:
     """
-    Find the number of unique cheats that save at least 100 ps.
+    Find the number of unique cheats (shortcuts) that save at least 'minimum_savings' picoseconds.
     Each cheat is uniquely identified by its (cheat_start, cheat_end).
+    This function considers shortcuts within a 'max_delta' Manhattan distance.
     """
-    cheats: CheatsDict = {}
+    distances, path = bfs_with_path(data.grid, data.start, data.end)
+    rows, cols = data.rows, data.cols
 
-    no_cheat_min_time, no_cheat_path = a_star_min_time(data.grid, data.start, data.end, -1, [], return_path=True)
+    potential_shortcuts = []
 
-    for cheat_time in range(len(no_cheat_path) - 1):
-        if cheat_time % 100 == 0:
-            print(f"Processing cheat time {cheat_time}...")
-        no_cheat_pos = no_cheat_path[cheat_time]
+    # Iterate all path cells (actually its as fast as iterate all rc in grid)
+    for (r,c) in path:
+        cell_dist_from_start = distances[r][c]
+        if cell_dist_from_start == -1:
+            continue # Ignore not reachable cells (also walls)
 
-        # Collect, position in grid around no_cheat_pos, which are not on no_cheat_path
-        valid_cheat_positions: List[List[Tuple[int,int]]] = []
-        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            nr, nc = no_cheat_pos[0] + dr, no_cheat_pos[1] + dc
-            if 0 <= nr < data.rows and 0 <= nc < data.cols and (nr, nc) not in no_cheat_path:
-                if data.grid[nr][nc] == '#':
-                    valid_cheat_positions.append([(nr, nc)])
-                # Now for (nr,nc) Collect, position in grid around no_cheat_pos, which are not on no_cheat_path
-                """
-                for dr2, dc2 in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                    nr2, nc2 = nr + dr2, nc + dc2
-                    if 0 <= nr2 < data.rows and 0 <= nc2 < data.cols and (nr2, nc2) not in no_cheat_path:
-                        pos = [(nr, nc),(nr2, nc2)]
-                        if pos not in valid_cheat_positions:
-                            valid_cheat_positions.append(pos)
-                """
+        # (r,c) is a reachable from start cell. Check all cells within a Manhattan distance of 'max_delta'.
+        for delta_row in range(-max_delta, max_delta+1):
+            for delta_col in range(-max_delta, max_delta+1):
+                if delta_row == 0 and delta_col == 0:
+                    continue # Skip the same cell
 
-        for cheat_points in valid_cheat_positions:
-            t1, path = a_star_min_time(grid=data.grid, start=data.start, end=data.end, cheat_start_time=cheat_time, valid_cheat_positions=cheat_points, return_path=False)
+                #shortcut_dist = abs(delta_row) + abs(delta_col) # Actually a manhattan distance
+                shortcut_dist = (delta_row if delta_row >= 0 else -delta_row) + (
+                    delta_col if delta_col >= 0 else -delta_col)
+                if shortcut_dist > max_delta:
+                    continue # Skip cells outside the Manhattan distance
 
-            """
-            if cheat_time == 20:
-                print(f"\n{cheat_time} - t1={t1} - save={no_cheat_min_time-t1} - cheat_points={cheat_points} - saving={no_cheat_min_time-t1}")
-                cheat_start = path[cheat_time]
-                cheat_end = path[cheat_time + 1]
-                printMap(grid=data.grid, path=path, cheat_steps=[cheat_start, cheat_end])
-                pass
-            """
+                nr, nc = r + delta_row, c + delta_col
+                if 0 <= nr < rows and 0 <= nc < cols:
+                    nrnc_cell_distance = distances[nr][nc]
+                    if nrnc_cell_distance == -1:
+                        continue  # Unreachable (wall)
 
-            if t1 > -1:
-                cheat_start = (-1,-1) # path[cheat_time]
-                cheat_end = (-1,-1) # path[cheat_time+1]
-                #print(f"\n{cheat_time}")
-                #printMap(grid=data.grid, path=path, cheat_steps=[cheat_start, cheat_end])
-                #print()
-                saving = no_cheat_min_time - t1
-                #if saving >= 100:
-                if saving not in cheats:
-                    cheats[saving] = []
-                cheats[saving].append((cheat_start, cheat_end))
+                    # Calculate the savings by taking the shortcut. So if we would jump to (nr, nc) from (r, c),
+                    # how much time would we save?
+                    savings = nrnc_cell_distance - cell_dist_from_start - shortcut_dist
+                    # savings can be negative if the (nr,nc) cell is on path that was already visited.
+                    if savings >= minimum_savings:
+                        potential_shortcuts.append((r, c, nr, nc, savings))
 
-    return cheats
+    unique_shortcuts = set(potential_shortcuts)
+    return unique_shortcuts
 
 
-def part1(data: ParsedData) -> CheatsDict:
-    # Find minimal time without cheating
-    cheatsDict = find_all_valid_cheats(data)
-    return cheatsDict
+def printMap(grid: List[List[str]],
+            path: List[Tuple[int, int]] = None,
+            cheat_steps: Dict[int, str] = None) -> None:
+    grid_copy = [row.copy() for row in grid]
+    if path:
+        for index, (r, c) in enumerate(path):
+            if grid_copy[r][c] in ('S', 'E'):
+                continue
+            if cheat_steps and index in cheat_steps:
+                grid_copy[r][c] = cheat_steps[index]
+            else:
+                grid_copy[r][c] = '.'
+    for row in grid_copy:
+        print(''.join(row))
 
 
-def part2(data: ParsedData) -> CheatsDict:
-    return {}
+def part1(data: ParsedData) -> int:
+    # Find the number of unique cheats that save at least 100 picoseconds withing a manhattan distance of 2.
+    best_shortcuts = find_shortcuts(data, minimum_savings=100, max_delta=2)
+    return len(best_shortcuts)
+
+
+def part2(data: ParsedData) -> int:
+    # Find the number of unique cheats that save at least 100 picoseconds,
+    # considering shortcuts within a manhattan distance of 20.
+    best_shortcuts = find_shortcuts(data, minimum_savings=100, max_delta=20)
+    return len(best_shortcuts)
+
 
 def solve(data: str, part: int = 1) -> int:
     parsed_data = parse_input(data)
-    cheatsDict = part1(parsed_data)
-    total = 0
-    for key, value in cheatsDict.items():
-        if key >= 100:
-            total += len(value)
-    return total
+    return part1(parsed_data) if part == 1 else part2(parsed_data)
 
 def test(part) -> bool:
-    # Placeholder for running the solution
-    # Replace this with actual input reading if necessary
     test_input = """
 ###############
 #...#...#.....#
@@ -246,17 +191,22 @@ def test(part) -> bool:
 ###############
     """
     parsed_data = parse_input(test_input)
+    all_passed = True
     if part == 1:
-        cheats = part1(parsed_data)
+        best_shortcuts = find_shortcuts(parsed_data, minimum_savings=0, max_delta=2)
 
-        print()
+        #convert best_sortcuts to a dictionary
+        cheat_dict = {}
+        for cheat in best_shortcuts:
+            cheat_dict[cheat[4]] = cheat_dict.get(cheat[4], []) + [cheat]
+
         res = ""
-        for time in sorted(cheats.keys()):
-            count = len(cheats[time])
+        for time in sorted(cheat_dict.keys()):
+            count = len(cheat_dict[time])
             if time == 0:
                 continue
             s = f" - There {"is" if count == 1 else "are"} {"one" if count == 1 else count} {"cheat" if count == 1 else "cheats"} that {"saves" if count == 1 else "save"} {time} picoseconds."
-            print(s)
+            #print(s)
             res += "\n" + s
         expected = """
  - There are 14 cheats that save 2 picoseconds.
@@ -270,19 +220,12 @@ def test(part) -> bool:
  - There is one cheat that saves 38 picoseconds.
  - There is one cheat that saves 40 picoseconds.
  - There is one cheat that saves 64 picoseconds."""
-        diff_result = git_like_diff(res, expected, fromfile='Original', tofile='Modified')
-        print(diff_result)
-        verify_result(res, expected, 1)
-
-        #expected1 = 84  # As per the problem statement
-        #verify_result(result1, expected1, 1)
-    #if part == 2:
-    #    result2 = part2(parsed_data)
-    #    expected2 = 0  # As per the sample, no cheat saves >=100 ps
-    #    verify_result(result2, expected2, 2)
+        #diff_result = git_like_diff(res, expected, fromfile='Original', tofile='Modified')
+        #print(diff_result)
+        all_passed = all_passed and verify_result(res, expected, 1)
+    return all_passed
 
 
-# Run the test
 if __name__ == "__main__":
-    #run_tests(20)
-    run_day(20, part1=True, part2=False) # 9448 is too high
+    run_tests(20)
+    run_day(20, part1=True, part2=True)
