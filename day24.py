@@ -35,7 +35,7 @@ For bit position 3:
 18. t8 XOR c2 -> s3  (final sum for bit 3)- s3=output_name_sum
 """
 
-# Order 0-3 is the same as in RCP (Ripple Carry Adder) diagram, excluding the first two gates which are easily being found
+# Order 0-3 is the same as in RCA (Ripple Carry Adder) diagram, excluding the first two gates which are easily being found
 # due to the inputs being x0 and y0s.
 GATE_AND = 0
 GATE_OR = 1
@@ -308,7 +308,7 @@ def find_switched_outputs(data: ParsedData) -> List[Tuple[str, str]]:
                     f"No gate found with name starting with '{name}' and gate_type '{gate_type}' starting from index {start_index}")
             logic_group[dest_index], logic_group[index] = logic_group[index], logic_group[dest_index]
 
-        # Reorder gates to their correct indexes, as in RCP schematic.
+        # Reorder gates to their correct indexes, as in RCA schematic.
         extract_swap(group,"x", GATE_XOR, 0, 0)
         extract_swap(group,"x", GATE_AND, 0, 1)
         if gate_index > 0:
